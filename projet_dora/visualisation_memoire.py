@@ -177,6 +177,65 @@ def plot_copule_gumbel_dependance():
     plt.savefig("copule_gumbel_dependance.png", dpi=300, bbox_inches='tight')
     plt.show()
 
+def plot_waterfall_contrefactuel():
+    """
+    Génère un diagramme en cascade (Waterfall) illustrant la décomposition 
+    du coût en capital du non-respect de DORA (Delta DORA).
+    """
+    # Données issues de l'exécution de approche_c_contrefactuel.py
+    etapes = [
+        "SCR DORA\n(Non Conforme)", 
+        "Effet Fréquence\n(Hygiène cyber)", 
+        "Effet Dépendance\n(Stratégie de sortie)", 
+        "SCR DORA\n(Conforme)"
+    ]
+    
+    # Valeurs (hauteurs des barres)
+    valeurs = [116.6, 14.3, 15.0, 87.3]
+    
+    # Bases des barres (pour l'effet de flottaison du waterfall)
+    bases = [0, 102.3, 87.3, 0]
+    
+    # Attribution des couleurs (Rouge/Alerte pour le départ, Gris pour la baisse, Bleu pour la cible)
+    couleurs = [COLOR_ALERT, COLOR_SECONDARY, COLOR_SECONDARY, COLOR_PRIMARY]
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    
+    # Positionnement sur l'axe X
+    x = np.arange(len(etapes))
+    largeur_barre = 0.55
+
+    # Création des barres
+    bars = ax.bar(x, valeurs, bottom=bases, color=couleurs, width=largeur_barre)
+
+    # Ajout des lignes de liaison en pointillés entre les colonnes
+    ax.plot([0, 1], [116.6, 116.6], color=COLOR_TEXT, linestyle='--', linewidth=1, alpha=0.4)
+    ax.plot([1, 2], [102.3, 102.3], color=COLOR_TEXT, linestyle='--', linewidth=1, alpha=0.4)
+    ax.plot([2, 3], [87.3, 87.3], color=COLOR_TEXT, linestyle='--', linewidth=1, alpha=0.4)
+
+    # Étiquettes de données sur chaque barre
+    for i, bar in enumerate(bars):
+        y_val = bar.get_height() + bar.get_y()
+        # On ajoute un signe "-" pour les effets de réduction
+        texte = f"{valeurs[i]:.1f}" if i in [0, 3] else f"- {valeurs[i]:.1f}"
+        ax.text(bar.get_x() + bar.get_width() / 2, y_val + 1.5, texte, 
+                ha='center', va='bottom', fontsize=11, fontweight='bold', color=COLOR_TEXT)
+
+    # Esthétique générale
+    ax.set_title("Décomposition du bénéfice en capital de la conformité DORA", 
+                 fontsize=16, fontweight="semibold", pad=20)
+    ax.set_ylabel("Capital Requis - SCR (en M€)", fontsize=12)
+    ax.set_xticks(x)
+    ax.set_xticklabels(etapes, fontsize=11)
+    
+    # On ajuste l'axe Y pour laisser de la place au texte en haut
+    ax.set_ylim(0, 130)
+    ax.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig("waterfall_conformite.png", dpi=300, bbox_inches='tight')
+    plt.show()
+
 
 if __name__ == "__main__":
     print("Génération du graphique de sensibilité au plafond...")
@@ -187,5 +246,8 @@ if __name__ == "__main__":
     
     print("Génération du graphique de la copule de Gumbel...")
     plot_copule_gumbel_dependance()
+    
+    print("Génération du diagramme Waterfall (Approche C)...")
+    plot_waterfall_contrefactuel()
     
     print("Tous les graphiques ont été sauvegardés avec succès !")
