@@ -167,7 +167,7 @@ def main():
     print("=" * 74)
     print("""   - A xi>1, le SCR est gouverné par le plafond (perte max réaliste),
      pas par les données : il se CONDITIONNE, il ne se mesure pas.
-   - Scénario central retenu : plafond 50 M€ -> SCR ~76 M€, PLAUSIBLE,
+   - Scénario central retenu : plafond 50 M€ -> SCR ~83 M€, PLAUSIBLE,
      soit ~2,4x la charge de la formule standard (32 M€).
    - L'écart au forfait standard démontre son insensibilité au profil TIC :
      c'est l'apport du modèle interne, indépendamment de la valeur exacte.
