@@ -55,6 +55,7 @@ REM_SEUIL_POT = 4_950_000.0
 REM_BETA = 2_000_000.0
 REM_P_QUEUE = 0.10
 REM_XI = 1.3
+REM_FACTEUR_SURDISP = 2.0      # variance/moyenne de la fréquence (NegBin) ; 1 -> Poisson
 PLAFOND_INDIV = 50_000_000.0   # scénario central retenu
 
 # --- HYPOTHESES D'EFFICACITE DE LA CONFORMITE (dire d'expert) ---
@@ -73,9 +74,15 @@ def _params_corps():
 
 
 def simuler_remediation(lam, rng):
-    """Remédiation corps+queue, fréquence lam, plafond central."""
+    """Remédiation corps+queue, fréquence binomiale négative (surdispersion), plafond central."""
     mu, sigma = _params_corps()
-    n = rng.poisson(lam, size=M)
+    if REM_FACTEUR_SURDISP <= 1.0 + 1e-9:
+        n = rng.poisson(lam, size=M)
+    else:
+        var = REM_FACTEUR_SURDISP * lam
+        p = lam / var
+        r = lam * p / (1.0 - p)
+        n = rng.negative_binomial(r, p, size=M)
     tot = int(n.sum())
     en_q = rng.random(tot) < REM_P_QUEUE
     sev = np.empty(tot)

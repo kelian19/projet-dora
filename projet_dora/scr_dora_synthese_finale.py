@@ -58,6 +58,10 @@ REM_BETA = 2_000_000.0
 REM_P_QUEUE = 0.10
 REM_LAMBDA_ENTITE = 2.0   # fréquence ramenée à UNE entité (cf. note ci-dessous)
 REM_XI_CENTRAL = 1.3      # littérature cyber, testé en sensibilité
+# Surdispersion de la fréquence : variance = facteur x moyenne (binomiale négative).
+# facteur=1 -> Poisson ; facteur>1 -> clustering des incidents cyber (réf : NegBin).
+# Choix de référence = 2.0 (surdispersion modérée), à tester en sensibilité.
+REM_FACTEUR_SURDISP = 2.0
 
 # --- Plafond central ancré (réassurance cyber ~10% fonds propres) ---
 PLAFOND_CENTRAL = 50_000_000.0
@@ -74,11 +78,24 @@ def _params_corps():
     return mu, sigma
 
 
+def _tirer_frequence(lam, rng, facteur_surdisp=REM_FACTEUR_SURDISP):
+    """Tire le nombre annuel d'incidents.
+    facteur_surdisp = variance/moyenne. =1 -> Poisson ; >1 -> binomiale négative
+    (clustering des incidents cyber). Moyenne = lam dans les deux cas."""
+    if facteur_surdisp <= 1.0 + 1e-9:
+        return rng.poisson(lam, size=M)
+    var = facteur_surdisp * lam
+    p = lam / var               # p = moyenne / variance
+    r = lam * p / (1.0 - p)     # r = moyenne * p / (1-p)
+    return rng.negative_binomial(r, p, size=M)
+
+
 def simuler_remediation(plafond, lam=REM_LAMBDA_ENTITE, xi=REM_XI_CENTRAL,
-                        beta=REM_BETA, p_queue=REM_P_QUEUE, rng=None):
-    """Remédiation corps+queue, plafond ancré. Voir docstring module."""
+                        beta=REM_BETA, p_queue=REM_P_QUEUE, rng=None,
+                        facteur_surdisp=REM_FACTEUR_SURDISP):
+    """Remédiation corps+queue, plafond ancré, fréquence binomiale négative."""
     mu, sigma = _params_corps()
-    n = rng.poisson(lam, size=M)
+    n = _tirer_frequence(lam, rng, facteur_surdisp)
     tot = int(n.sum())
     en_q = rng.random(tot) < p_queue
     sev = np.empty(tot)
