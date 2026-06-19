@@ -27,8 +27,13 @@ NIVEAU_VAR = 0.995
 # =============================================================================
 def calibrer_remediation(
     # --- Fréquence (Binomiale Négative) ---
+    # facteur_surdispersion = variance/moyenne, calibré sur les comptages annuels
+    # HACK de la base PRC. A l'échelle MARCHE (mu~53/an, 2019-2025), MLE NB2 donne
+    # alpha~0,15 (facteur ~8,9). Ce qui se transpose à l'échelle ENTITE est alpha
+    # (clustering structurel), PAS le facteur : à lambda=2, facteur = 1+alpha*lambda
+    # ~ 1,30. Référence 1,30 (sensibilité [1,1;1,5;2,0]).
     lambda_freq=2.0,
-    facteur_surdispersion=2.0,
+    facteur_surdispersion=1.30,
     # --- Corps de distribution (PRC Hack) ---
     mediane_corps=171_000.0,
     q95_corps=9_340_000.0,
@@ -38,7 +43,7 @@ def calibrer_remediation(
     p_queue=0.10,
     beta=2_000_000.0,
     # --- Plafond individuel ancré sur le bilan ---
-    plafond_individuel=50_000_000.0,
+    plafond_individuel=40_000_000.0,
 ):
     """
     Calibre la brique remédiation avec structure corps + queue et fréquence NegBin.
@@ -70,9 +75,18 @@ def simuler_remediation(cal, M, rng, diagnostic=False):
     """Simule M années de pertes de remédiation (fréquence NegBin + sévérité Spliced)."""
     
     # 1. Tirage de la fréquence (Binomiale Négative)
-    # p = moyenne / variance = 1 / facteur_surdispersion
-    p_negbin = 1.0 / cal["facteur_surdispersion"]
-    n_par_an = rng.negative_binomial(cal["lambda_freq"], p_negbin, size=M)
+    # Paramétrisation correcte garantissant E[N] = lambda_freq pour TOUT facteur :
+    #   Var = facteur * moyenne  ->  p = moyenne/variance = 1/facteur
+    #   r = moyenne * p / (1 - p)
+    # (numpy.negative_binomial(r, p) a pour moyenne r*(1-p)/p = lambda_freq)
+    lam = cal["lambda_freq"]
+    facteur = cal["facteur_surdispersion"]
+    if facteur <= 1.0 + 1e-9:
+        n_par_an = rng.poisson(lam, size=M)
+    else:
+        p_negbin = 1.0 / facteur
+        r_negbin = lam * p_negbin / (1.0 - p_negbin)
+        n_par_an = rng.negative_binomial(r_negbin, p_negbin, size=M)
     
     tot = int(n_par_an.sum())
     if tot == 0:
