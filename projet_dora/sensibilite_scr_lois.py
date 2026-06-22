@@ -19,7 +19,7 @@ GRAINE = 42
 
 LAMBDA_AN = 2.0
 FACTEUR_SURDISPERSION = 2.0  # Variance = 2 * Moyenne
-PLAFOND = 50_000_000.0
+PLAFOND = 40_000_000.0
 
 # Paramètres Sévérité
 MEDIANE = 171_000.0
