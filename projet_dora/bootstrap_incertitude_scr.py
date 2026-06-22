@@ -70,7 +70,29 @@ def tirer_parametres(rng):
     theta = rng.uniform(1.5, 2.2)
     # q95 du corps : ±20% lognormal autour de la valeur de référence
     q95 = ref.REM_Q95_CORPS * np.exp(rng.normal(0.0, 0.20))
-    return {"xi": xi, "lam": lam, "facteur": facteur, "theta": theta, "q95": q95}
+    alpha_s = rng.uniform(0.5, 1.5)
+    beta_s  = rng.uniform(4.0, 9.0)
+    proba_s = rng.uniform(0.05, 0.20)
+    scenarios_ref = [
+        {"nom": "Panne hyperscaler cloud",            "proba_an": 0.08,
+         "q50": 2_000_000, "q95": 25_000_000,  "q995": 150_000_000, "loi": "gpd"},
+        {"nom": "Compromission prestataire paiement", "proba_an": 0.05,
+         "q50": 1_000_000, "q95": 12_000_000,  "q995":  80_000_000, "loi": "gpd"},
+        {"nom": "Rancongiciel editeur metier",        "proba_an": 0.12,
+         "q50":   300_000, "q95":  3_000_000,  "q995":  20_000_000, "loi": "lognorm"},
+    ]
+    import numpy as _np
+    scenarios_tires = []
+    for s in scenarios_ref:
+        s_tire = dict(s)
+        s_tire["q95"]  = s["q95"]  * _np.exp(rng.normal(0.0, 0.30))
+        s_tire["q995"] = s["q995"] * _np.exp(rng.normal(0.0, 0.30))
+        s_tire["q95"]  = max(s_tire["q95"],  s["q50"] * 1.01)
+        s_tire["q995"] = max(s_tire["q995"], s_tire["q95"] * 1.01)
+        scenarios_tires.append(s_tire)
+    return {"xi": xi, "lam": lam, "facteur": facteur, "theta": theta, "q95": q95,
+            "alpha_s": alpha_s, "beta_s": beta_s, "proba_s": proba_s,
+            "scenarios_presta": scenarios_tires}
 
 
 def _sigma_corps(q95):

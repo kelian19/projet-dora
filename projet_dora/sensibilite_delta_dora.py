@@ -46,7 +46,7 @@ REM_SEUIL_POT = 4_950_000.0
 REM_BETA = 2_000_000.0
 REM_P_QUEUE = 0.10
 REM_XI = 1.3
-PLAFOND_INDIV = 50_000_000.0
+PLAFOND_INDIV = 40_000_000.0   # plafond central 40 M euros, aligne approche A
 
 # Etat NON CONFORME (fixe) — c'est la reference haute
 LAMBDA_NON_CONF = 3.0

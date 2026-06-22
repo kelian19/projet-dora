@@ -22,8 +22,8 @@ le démontre : le capital croît linéairement avec le plafond. On ne "mesure"
 donc pas un SCR ponctuel ; on le conditionne à un jugement de perte maximale
 réaliste. C'est la traduction quantitative de la Remarque 3 du document.
 
-CHOIX CENTRAL : plafond = 50 M€, ancré sur la capacité de réassurance cyber
-disponible (~10% des fonds propres de l'entité). Donne un SCR plausible
+CHOIX CENTRAL : plafond = 40 M€, ancré sur la capacité de réassurance cyber
+disponible (~5% des fonds propres de l'entité). Donne un SCR plausible
 (~76 M€) qui reste 2,4x la charge de la formule standard -> l'argument
 d'insensibilité de la formule standard au profil TIC tient.
 
@@ -60,7 +60,7 @@ REM_LAMBDA_ENTITE = 2.0   # fréquence ramenée à UNE entité (cf. note ci-dess
 REM_XI_CENTRAL = 1.3      # littérature cyber, testé en sensibilité
 
 # --- Plafond central ancré (réassurance cyber ~10% fonds propres) ---
-PLAFOND_CENTRAL = 50_000_000.0
+PLAFOND_CENTRAL = 40_000_000.0
 
 # Note fréquence : la PRC recense 126 incidents HACK sur ~10 ans pour TOUT un
 # marché (multi-entités). Rapportée à UNE entité d'assurance, la fréquence
@@ -109,7 +109,7 @@ def main():
     L_s, L_p, L_a = construire_briques(rng)
 
     print("=" * 74)
-    print(" SCR_DORA — SCENARIO CENTRAL (plafond 50 M€, xi=1,3)")
+    print(" SCR_DORA — SCENARIO CENTRAL (plafond 40 M€, xi=1,3)")
     print("=" * 74)
     L_r = simuler_remediation(PLAFOND_CENTRAL, rng=rng)
     L_dora = L_s + L_r + L_p + L_a
@@ -150,7 +150,7 @@ def main():
     print("=" * 74)
     print("""   - A xi>1, le SCR est gouverné par le plafond (perte max réaliste),
      pas par les données : il se CONDITIONNE, il ne se mesure pas.
-   - Scénario central retenu : plafond 50 M€ -> SCR ~76 M€, PLAUSIBLE,
+   - Scénario central retenu : plafond 40 M€ -> SCR ~76 M€, PLAUSIBLE,
      soit ~2,4x la charge de la formule standard (32 M€).
    - L'écart au forfait standard démontre son insensibilité au profil TIC :
      c'est l'apport du modèle interne, indépendamment de la valeur exacte.
