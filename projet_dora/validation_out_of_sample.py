@@ -98,13 +98,23 @@ def convertir_records_eur(records):
     return COUT_PAR_RECORD * records ** CONCAVITE
 
 
+
+def cdf_mixte(x, mu, sigma, seuil_pot, xi, beta, p_queue):
+    import numpy as np
+    from scipy import stats
+    x = np.asarray(x, dtype=float)
+    F_corps = stats.lognorm.cdf(x, s=sigma, scale=np.exp(mu))
+    excedent = np.maximum(x - seuil_pot, 0.0)
+    F_gpd = stats.genpareto.cdf(excedent, c=xi, scale=beta)
+    return (1.0 - p_queue) * F_corps + p_queue * F_gpd
+
 def valider(couts):
     """Applique les trois tests de validation out-of-sample."""
     mu = np.log(MEDIANE_CORPS)
     sigma = (np.log(Q95_CORPS) - mu) / stats.norm.ppf(0.95)
 
     # Test 1 : couverture (uniformité des quantiles-modèle)
-    q_obs = stats.lognorm.cdf(couts, s=sigma, scale=np.exp(mu))
+    q_obs = cdf_mixte(couts, mu, sigma, SEUIL_POT, XI, BETA, P_QUEUE)
     ks, pval = stats.kstest(q_obs, "uniform")
 
     # Test 2 : plafond
