@@ -42,9 +42,10 @@ plt.rcParams.update({
 def plot_sensibilite_plafond():
     """Génère la courbe de sensibilité du SCR DORA au plafond individuel."""
     
-    # Données issues de scr_dora_synthese_finale.py
-    plafonds_m = np.array([20, 50, 75, 100, 196])
-    scr_dora_m = np.array([54.0, 76.0, 91.9, 112.2, 198.6])
+    # Données issues de scr_dora_synthese_finale.py — plafond central = 40 M€
+    # Recalculées après correction du plafond (50 M€ -> 40 M€, copule Gumbel theta=1,8)
+    plafonds_m = np.array([20, 40, 75, 100, 196])
+    scr_dora_m = np.array([85.3, 103.0, 131.3, 152.5, 235.0])
     plafond_reglementaire_m = 108.0
 
     fig, ax = plt.subplots(figsize=(10, 6))

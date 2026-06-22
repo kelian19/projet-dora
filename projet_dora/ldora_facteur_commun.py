@@ -20,21 +20,27 @@ pas par le tau de Kendall global (pollue par la masse en zero des briques
 rares), mais par la CONCENTRATION SYSTEMIQUE dans la queue de L_DORA :
       P(choc | L_DORA > VaR_99.5%)  >>  P(choc).
 
-Resultat de reference : SCR_DORA ~ 85 M (meme ordre que l'approche A ~77 M),
+Resultat de reference : SCR_DORA ~ 77 M (meme ordre que l'approche A ~77 M),
 borne par la somme comonotone des VaR marginales (cf garde-fou).
+NB : le plafond de severite individuel a ete corrige de 50 M a 40 M (alignement
+sur l'approche A, ancre sur la capacite de reassurance ~5% FP). Le SCR precedemment
+annonce a ~85 M etait conditionnel au plafond 50 M.
 =======================================================================
 """
 
 import numpy as np
 from scipy import stats
 
-rng = np.random.default_rng(20260616)
+# Note : le générateur aléatoire (rng) n'est plus déclaré au niveau module.
+# Il est passé en paramètre à chaque fonction pour garantir la reproductibilité
+# lorsque ce module est importé depuis un autre script (bootstrap, robustesse).
 
 # ----------------------------------------------------------------------
 # 1. Assureur synthetique (inchange vs approche A)
 # ----------------------------------------------------------------------
 CA, BSCR, FP = 800e6, 360e6, 784e6
-CAP_SEV      = 50e6            # plafond de severite individuel (~10% FP)
+CAP_SEV      = 40e6            # plafond de sévérité individuel (~5% FP, ancré sur
+                               # réassurance cyber, aligné sur l'approche A)
 
 # ----------------------------------------------------------------------
 # 2. Severite remediation : corps lognormal + queue GPD (POT)
@@ -46,7 +52,7 @@ U_POT    = 5e6                 # seuil POT
 XI_REF   = 1.4                 # forme (litterature), queue lourde xi>1
 BETA_REF = U_POT * 0.9         # echelle GPD recalee sur marge remediation
 
-def severite_remediation(n, xi, beta):
+def severite_remediation(n, xi, beta, rng):
     """Melange corps lognormal (sous u) + u+GPD (queue), plafonne."""
     x = rng.lognormal(MU_LN, SIG_LN, size=n)
     tail = x > U_POT
@@ -83,9 +89,22 @@ PREST_MU, PREST_SIG = np.log(18e6), 0.7
 # 4. Simulateur
 # ----------------------------------------------------------------------
 def simulate(M, k=K_FRAILTY, xi=XI_REF, beta=BETA_REF, cap=CAP_SEV,
-             p_sys=P_SYS, return_B=False):
-    global CAP_SEV
-    CAP_SEV = cap
+             p_sys=P_SYS, return_B=False, rng=None):
+    """
+    Simule M années de pertes DORA par le modèle à facteur commun.
+
+    Paramètres
+    ----------
+    rng : numpy.random.Generator, optionnel
+        Générateur aléatoire. Si None, crée un générateur avec graine 20260616.
+        Passer rng explicitement garantit la reproductibilité quand ce module
+        est appelé depuis un script externe (bootstrap, comparaison Gumbel).
+    cap : float
+        Plafond de sévérité individuel. Par défaut CAP_SEV = 40 M€,
+        aligné sur le scénario central de l'approche A (ancre réassurance ~5% FP).
+    """
+    if rng is None:
+        rng = np.random.default_rng(20260616)
 
     Z = rng.gamma(k, 1.0 / k, size=M)        # frailty doux, E[Z]=1
     B = rng.random(M) < p_sys                 # choc systemique partage
@@ -95,7 +114,7 @@ def simulate(M, k=K_FRAILTY, xi=XI_REF, beta=BETA_REF, cap=CAP_SEV,
     L_rem = np.zeros(M)
     idx = np.repeat(np.arange(M), n_rem)
     if idx.size:
-        np.add.at(L_rem, idx, severite_remediation(idx.size, xi, beta))
+        np.add.at(L_rem, idx, severite_remediation(idx.size, xi, beta, rng))
 
     # --- Sanction (atome en zero) ---
     p_s = np.minimum(P_SANCTION * Z + B * P_SANCTION_SHOCK, 1.0)
@@ -107,7 +126,7 @@ def simulate(M, k=K_FRAILTY, xi=XI_REF, beta=BETA_REF, cap=CAP_SEV,
     L_pre = np.zeros(M)
     idxp = np.repeat(np.arange(M), n_pre)
     if idxp.size:
-        sevp = np.minimum(rng.lognormal(PREST_MU, PREST_SIG, idxp.size), CAP_SEV)
+        sevp = np.minimum(rng.lognormal(PREST_MU, PREST_SIG, idxp.size), cap)
         np.add.at(L_pre, idxp, sevp)
 
     if return_B:
@@ -121,7 +140,8 @@ VaR = lambda x, q=0.995: float(np.quantile(x, q))
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
     M = 1_000_000
-    L_rem, L_sanct, L_pre, B = simulate(M, return_B=True)
+    rng_main = np.random.default_rng(20260616)
+    L_rem, L_sanct, L_pre, B = simulate(M, return_B=True, rng=rng_main)
     L_tot = L_rem + L_sanct + L_pre
 
     v_s, v_r, v_p = VaR(L_sanct), VaR(L_rem), VaR(L_pre)
@@ -153,20 +173,21 @@ if __name__ == "__main__":
 
     print("\n=== Sensibilite force de dependance k ===")
     for k in [1.0, 2.5, 5.0, 50.0]:
-        Lr, Ls, Lp = simulate(M, k=k)
+        Lr, Ls, Lp = simulate(M, k=k, rng=np.random.default_rng(20260616))
         print(f"  k={k:5.1f} (Var Z={1/k:5.3f})  SCR = {VaR(Lr+Ls+Lp)/1e6:6.1f} M")
 
     print("\n=== Sensibilite plafond de severite ===")
-    for cap in [20e6, 50e6, 75e6, 100e6]:
-        Lr, Ls, Lp = simulate(M, cap=cap)
+    for cap in [20e6, 40e6, 75e6, 100e6]:
+        Lr, Ls, Lp = simulate(M, cap=cap, rng=np.random.default_rng(20260616))
         print(f"  plafond={cap/1e6:4.0f}M  SCR = {VaR(Lr+Ls+Lp)/1e6:6.1f} M")
 
     print("\n=== Sensibilite xi ===")
     for xi in [1.1, 1.25, 1.4, 1.5]:
-        Lr, Ls, Lp = simulate(M, xi=xi, beta=U_POT * (xi / XI_REF) * 0.9)
+        Lr, Ls, Lp = simulate(M, xi=xi, beta=U_POT * (xi / XI_REF) * 0.9,
+                              rng=np.random.default_rng(20260616))
         print(f"  xi={xi:.2f}  SCR = {VaR(Lr+Ls+Lp)/1e6:6.1f} M")
 
     print("\n=== Sensibilite proba de choc systemique p_sys ===")
     for p in [0.01, 0.03, 0.05, 0.10]:
-        Lr, Ls, Lp = simulate(M, p_sys=p)
+        Lr, Ls, Lp = simulate(M, p_sys=p, rng=np.random.default_rng(20260616))
         print(f"  p_sys={p:.2f}  SCR = {VaR(Lr+Ls+Lp)/1e6:6.1f} M")
