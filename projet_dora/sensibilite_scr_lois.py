@@ -19,7 +19,7 @@ GRAINE = 42
 
 LAMBDA_AN = 2.0
 FACTEUR_SURDISPERSION = 2.0  # Variance = 2 * Moyenne
-PLAFOND = 40_000_000.0
+PLAFOND = 40_000_000.0   # plafond central (40 M€, ~5% FP, aligné sur l'approche A)
 
 # Paramètres Sévérité
 MEDIANE = 171_000.0
@@ -79,4 +79,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

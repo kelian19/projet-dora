@@ -2,3 +2,13 @@
 __pycache__/
 *.png
 *.csv
+
+# Bases de donnees et gros fichiers
+*.csv
+*.db
+*.sqlite
+*.pkl
+
+# Environnements virtuels et caches
+.venv/
+__pycache__/
