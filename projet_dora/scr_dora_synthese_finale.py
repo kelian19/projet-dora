@@ -23,9 +23,10 @@ donc pas un SCR ponctuel ; on le conditionne à un jugement de perte maximale
 réaliste. C'est la traduction quantitative de la Remarque 3 du document.
 
 CHOIX CENTRAL : plafond = 40 M€, ancré sur la capacité de réassurance cyber
-disponible (~5% des fonds propres de l'entité). Donne un SCR plausible
-(~76 M€) qui reste 2,4x la charge de la formule standard -> l'argument
-d'insensibilité de la formule standard au profil TIC tient.
+disponible (~5% des fonds propres de l'entité). Sous copule Gumbel theta=1,8,
+ce plafond maintient le SCR sous le plafond op réglementaire (0,3*BSCR = 108 M€).
+Donne un SCR plausible (~103 M€) qui reste 3,2x la charge de la formule standard
+-> l'argument d'insensibilité de la formule standard au profil TIC tient.
 
 VALIDATIONS AUTOMATIQUES (garde-fous) :
   - plausibilité réglementaire : SCR <= 0,3*BSCR, < CA, < fonds propres
@@ -42,6 +43,7 @@ from scipy import stats
 from brique_sanction import calibrer_sanction, simuler_sanction
 from brique_prestataire import calibrer_prestataire, simuler_prestataire
 from brique_aggravation import calibrer_aggravation, simuler_aggravation
+from copule_gumbel_agregation import echantillon_gumbel, make_quantile_empirique
 from ancrage_bilan_plausibilite import (
     profil_assureur, tester_plausibilite_scr, afficher_plausibilite,
 )
@@ -58,8 +60,26 @@ REM_BETA = 2_000_000.0
 REM_P_QUEUE = 0.10
 REM_LAMBDA_ENTITE = 2.0   # fréquence ramenée à UNE entité (cf. note ci-dessous)
 REM_XI_CENTRAL = 1.3      # littérature cyber, testé en sensibilité
+# Surdispersion de la fréquence (variance = facteur x moyenne, binomiale négative).
+# CALIBRATION : comptages annuels HACK de la base PRC (2019-2025), MLE NB2 ->
+# alpha ~ 0,15 à l'échelle marché (mu~53/an). C'est alpha (clustering structurel)
+# qui se transpose à l'échelle entité, pas le facteur : à lambda=2, le facteur
+# attendu = 1 + alpha*lambda ~ 1,30. Référence = 1,30 (sensibilité [1,1;1,5;2,0]).
+REM_FACTEUR_SURDISP = 1.30
 
-# --- Plafond central ancré (réassurance cyber ~10% fonds propres) ---
+# --- Dépendance inter-briques : copule de Gumbel (approche de référence) ---
+# theta=1 -> indépendance ; theta->inf -> comonotonie. tau Kendall = 1 - 1/theta.
+# theta=1,8 = état "non conforme" (forte contagion : concentration cloud non
+# maîtrisée), cohérent avec l'approche C. C'est l'agrégation de REFERENCE du
+# mémoire ; la somme indépendante (theta=1) est conservée comme comparatif.
+THETA_GUMBEL = 1.8
+
+# --- Plafond central ancré (réassurance cyber ~5% fonds propres) ---
+# 40 M€ ~ 5% des fonds propres (784 M€), ordre de grandeur de la capacité de
+# réassurance cyber mobilisable. Sous copule Gumbel theta=1,8, ce plafond
+# maintient le SCR_DORA (~103 M€) sous le plafond op réglementaire (0,3*BSCR
+# = 108 M€) tout en conservant une dépendance de queue forte. A 50 M€, la
+# combinaison plafond+copule franchissait le plafond réglementaire.
 PLAFOND_CENTRAL = 40_000_000.0
 
 # Note fréquence : la PRC recense 126 incidents HACK sur ~10 ans pour TOUT un
@@ -74,11 +94,24 @@ def _params_corps():
     return mu, sigma
 
 
+def _tirer_frequence(lam, rng, facteur_surdisp=REM_FACTEUR_SURDISP):
+    """Tire le nombre annuel d'incidents.
+    facteur_surdisp = variance/moyenne. =1 -> Poisson ; >1 -> binomiale négative
+    (clustering des incidents cyber). Moyenne = lam dans les deux cas."""
+    if facteur_surdisp <= 1.0 + 1e-9:
+        return rng.poisson(lam, size=M)
+    var = facteur_surdisp * lam
+    p = lam / var               # p = moyenne / variance
+    r = lam * p / (1.0 - p)     # r = moyenne * p / (1-p)
+    return rng.negative_binomial(r, p, size=M)
+
+
 def simuler_remediation(plafond, lam=REM_LAMBDA_ENTITE, xi=REM_XI_CENTRAL,
-                        beta=REM_BETA, p_queue=REM_P_QUEUE, rng=None):
-    """Remédiation corps+queue, plafond ancré. Voir docstring module."""
+                        beta=REM_BETA, p_queue=REM_P_QUEUE, rng=None,
+                        facteur_surdisp=REM_FACTEUR_SURDISP):
+    """Remédiation corps+queue, plafond ancré, fréquence binomiale négative."""
     mu, sigma = _params_corps()
-    n = rng.poisson(lam, size=M)
+    n = _tirer_frequence(lam, rng, facteur_surdisp)
     tot = int(n.sum())
     en_q = rng.random(tot) < p_queue
     sev = np.empty(tot)
@@ -103,32 +136,64 @@ def construire_briques(rng):
     return L_s, L_p, L_a
 
 
+def agreger_gumbel(marginales, theta, rng):
+    """Agrège les briques par copule de Gumbel (dépendance de queue supérieure).
+
+    theta=1 redonne exactement la somme indépendante. Pour theta>1, on couple
+    les rangs des marginales via un échantillon de copule de Gumbel (méthode de
+    Marshall-Olkin), ce qui préserve les marges stand-alone tout en injectant la
+    co-occurrence des coûts extrêmes. C'est l'agrégation de référence du mémoire.
+    """
+    M_loc = len(marginales[0])
+    d = len(marginales)
+    if theta <= 1.0 + 1e-9:
+        return np.sum(marginales, axis=0)
+    U = echantillon_gumbel(M_loc, d, theta, rng)
+    L = np.zeros(M_loc)
+    for j in range(d):
+        L += make_quantile_empirique(marginales[j])(U[:, j])
+    return L
+
+
 def main():
     rng = np.random.default_rng(GRAINE)
     profil = profil_assureur(ca_annuel=800e6)
     L_s, L_p, L_a = construire_briques(rng)
 
     print("=" * 74)
-    print(" SCR_DORA — SCENARIO CENTRAL (plafond 40 M€, xi=1,3)")
+    print(" SCR_DORA — SCENARIO CENTRAL (plafond 40 M€, xi=1,3, copule Gumbel theta=1,8)")
     print("=" * 74)
     L_r = simuler_remediation(PLAFOND_CENTRAL, rng=rng)
-    L_dora = L_s + L_r + L_p + L_a
+    marginales = [L_s, L_r, L_p, L_a]
     for nom, L in [("Sanction", L_s), ("Remédiation", L_r),
                    ("Prestataire", L_p), ("Aggravation", L_a)]:
-        print(f"   {nom:14s} VaR99.5 = {np.quantile(L, NIVEAU_VAR)/1e6:7.2f} M€")
+        print(f"   {nom:14s} VaR99.5 (stand-alone) = {np.quantile(L, NIVEAU_VAR)/1e6:7.2f} M€")
+
+    # Agrégation de REFERENCE : copule de Gumbel (dépendance de queue)
+    L_dora = agreger_gumbel(marginales, THETA_GUMBEL, rng)
     scr_central = np.quantile(L_dora, NIVEAU_VAR)
-    print(f"   {'L_DORA total':14s} VaR99.5 = {scr_central/1e6:7.2f} M€")
+
+    # Comparatif : somme indépendante (theta=1) pour mesurer l'effet de la copule
+    L_indep = np.sum(marginales, axis=0)
+    scr_indep = np.quantile(L_indep, NIVEAU_VAR)
+
+    print(f"   {'-'*60}")
+    print(f"   {'L_DORA (indépendance)':30s} VaR99.5 = {scr_indep/1e6:7.2f} M€")
+    print(f"   {'L_DORA (Gumbel theta=1,8)':30s} VaR99.5 = {scr_central/1e6:7.2f} M€  <- REFERENCE")
+    print(f"   {'effet copule':30s}        = {(scr_central-scr_indep)/1e6:+7.2f} M€ "
+          f"({100*(scr_central/scr_indep-1):+.1f}%)")
 
     print()
     afficher_plausibilite(scr_central, profil)
 
     # --- Sensibilité à xi (fourchette, pas un point) ---
     print("\n" + "=" * 74)
-    print(" SENSIBILITE A xi (plafond central 50 M€)")
+    print(" SENSIBILITE A xi (plafond central 40 M€)")
     print("=" * 74)
     for xi in [1.1, 1.3, 1.5]:
         L_r = simuler_remediation(PLAFOND_CENTRAL, xi=xi, rng=rng)
-        scr = np.quantile(L_s + L_r + L_p + L_a, NIVEAU_VAR)
+        scr = np.quantile(agreger_gumbel([L_s, L_r, L_p, L_a], THETA_GUMBEL, rng),
+                          NIVEAU_VAR)
         print(f"   xi={xi:.1f} -> SCR_DORA = {scr/1e6:6.1f} M€ "
               f"({scr/profil['scr_op_standard']:.1f}x formule standard)")
 
@@ -138,23 +203,41 @@ def main():
     print("=" * 74)
     print(f"   {'plafond':>10} | {'SCR_DORA':>10} | verdict plausibilité")
     print("   " + "-" * 48)
-    for pl in [20e6, 50e6, 75e6, 100e6, 196e6]:
+    for pl in [20e6, 40e6, 50e6, 75e6, 100e6]:  # 40M€ = central ; 50M€ = ancienne ref (non plausible sous Gumbel 1,8)
         L_r = simuler_remediation(pl, rng=rng)
-        scr = np.quantile(L_s + L_r + L_p + L_a, NIVEAU_VAR)
+        scr = np.quantile(agreger_gumbel([L_s, L_r, L_p, L_a], THETA_GUMBEL, rng),
+                          NIVEAU_VAR)
         t = tester_plausibilite_scr(scr, profil)
         print(f"   {pl/1e6:8.0f}M€ | {scr/1e6:7.1f}M€ | "
               f"{'PLAUSIBLE' if t['plausible'] else 'NON PLAUSIBLE'}")
 
+    # --- Sensibilité à theta (structure de dépendance) ---
+    print("\n" + "=" * 74)
+    print(" SENSIBILITE A LA DEPENDANCE theta (plafond central 40 M€, xi=1,3)")
+    print("=" * 74)
+    L_r = simuler_remediation(PLAFOND_CENTRAL, rng=rng)
+    print(f"   {'theta':>6} | {'tau Kendall':>11} | {'SCR_DORA':>10}")
+    print("   " + "-" * 34)
+    for th in [1.0, 1.2, 1.5, 1.8, 2.5]:
+        scr = np.quantile(agreger_gumbel([L_s, L_r, L_p, L_a], th, rng), NIVEAU_VAR)
+        tau = 0.0 if th <= 1 else 1 - 1/th
+        tag = "  <- REFERENCE" if abs(th-THETA_GUMBEL) < 1e-9 else ""
+        print(f"   {th:6.1f} | {tau:11.2f} | {scr/1e6:7.1f}M€{tag}")
+
     print("\n" + "=" * 74)
     print(" CONCLUSION POUR LE MEMOIRE")
     print("=" * 74)
-    print("""   - A xi>1, le SCR est gouverné par le plafond (perte max réaliste),
+    print(f"""   - Agrégation de REFERENCE : copule de Gumbel (theta={THETA_GUMBEL}), qui
+     injecte la dépendance de queue entre briques. La somme indépendante
+     est conservée comme borne basse comparative.
+   - A xi>1, le SCR est gouverné par le plafond (perte max réaliste),
      pas par les données : il se CONDITIONNE, il ne se mesure pas.
-   - Scénario central retenu : plafond 40 M€ -> SCR ~76 M€, PLAUSIBLE,
-     soit ~2,4x la charge de la formule standard (32 M€).
+   - Fréquence : binomiale négative, facteur de surdispersion {REM_FACTEUR_SURDISP}
+     calibré sur les comptages HACK de la PRC (alpha~0,15 transposé à
+     l'échelle entité), testé en sensibilité.
    - L'écart au forfait standard démontre son insensibilité au profil TIC :
      c'est l'apport du modèle interne, indépendamment de la valeur exacte.
-   - Le SCR est présenté en FOURCHETTE (xi, plafond), pas en point unique.""")
+   - Le SCR est présenté en FOURCHETTE (xi, theta, plafond), pas en point.""")
     print("=" * 74)
 
 

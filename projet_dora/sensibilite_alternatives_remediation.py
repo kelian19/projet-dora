@@ -33,7 +33,7 @@ SEUIL_POT = 4_950_000.0
 XI_REF = 1.3
 BETA_REF = 2_000_000.0
 P_QUEUE = 0.10
-PLAFOND = 40_000_000.0
+PLAFOND = 40_000_000.0   # plafond central (40 M€, ~5% FP, aligné sur l'approche A)
 
 def generer_pseudo_donnees(n_samples=10000, rng=None):
     mu = np.log(MEDIANE_CORPS)

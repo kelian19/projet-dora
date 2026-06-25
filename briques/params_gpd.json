@@ -1,0 +1,22 @@
+{
+  "variable": "total_affected (volume personnes, niveau evenement)",
+  "seuil_U": 128467,
+  "xi_fit": 1.2989864499010932,
+  "xi_central_retenu": 1.3,
+  "xi_plage_sensibilite": [
+    1.25,
+    1.55
+  ],
+  "sigma": 257575.75131159916,
+  "prob_depassement": 0.06543001686340641,
+  "N": 20755,
+  "n_exces": 1358,
+  "xi_ic95": [
+    1.1675631597844451,
+    1.4200113860317185
+  ],
+  "sigma_ic95": [
+    228405.17078135823,
+    289239.05952545267
+  ]
+}
